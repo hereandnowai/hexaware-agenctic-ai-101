@@ -2,20 +2,16 @@ from dotenv import load_dotenv
 from os import getenv
 import os
 import urllib.request
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from google import genai
 from langchain_community.document_loaders import PyPDFLoader
 from system_prompt import SYSTEM_PROMPT
 
 load_dotenv()
 
-llm = AzureChatOpenAI(
-    azure_deployment=getenv("AZURE_OPENAI_MODEL"),
-    api_version=getenv("AZURE_OPENAI_API_VERSION"),
-    streaming=True
-    )
+client = genai.Client(api_key=getenv("GEMINI_API_KEY"))
+MODEL_NAME = "gemma-4-31b-it"
 
-PDF_PATH = os.path.join(os.path.dirname(__file__), "gemma4-technical-report.pdf")
+PDF_PATH = os.path.join(os.path.dirname(__file__), "profile-rr.pdf")
 PDF_URL = "https://raw.githubusercontent.com/hereandnowai/genai-and-prompt-engineering-eduhubspot-s1/main/day-6-of-14/7-chatbot-with-pdf/profile-rr.pdf"
 
 def download_pdf(url, file_path):
@@ -38,16 +34,15 @@ def load_pdf_context(pdf_path):
 pdf_context = load_pdf_context(PDF_PATH)
 full_system_prompt = f"{SYSTEM_PROMPT}\n\nContext from PDF:\n{pdf_context}"
 
-messages: list[BaseMessage] = [SystemMessage(content=full_system_prompt)]
+priming_history = [
+    {"role": "user", "parts": [{"text": full_system_prompt}]},
+    {"role": "model", "parts": [{"text": "Understood. I will use the provided context to answer your questions."}]}
+]
+chat = client.chats.create(model=MODEL_NAME, history=priming_history)
 
 def get_streaming_response(user_input):
-    global messages
-    messages.append(HumanMessage(content=user_input))
-
     full_response = ""
-    for chunk in llm.stream(messages):
-        content = chunk.content
-        if isinstance(content, str) and content:
-            full_response += content
-            yield ("response", content)
-    messages.append(AIMessage(content=full_response))
+    for chunk in chat.send_message_stream(user_input):
+        if chunk.text:
+            full_response += chunk.text
+            yield ("response", chunk.text)
