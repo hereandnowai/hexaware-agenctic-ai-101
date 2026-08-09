@@ -96,8 +96,11 @@ def history_to_messages(history: list[dict]):
             if isinstance(h.get("content"), str) and h.get("role") in ("user", "assistant")]
 
 
-#  Illustrative rate card, USD per MILLION tokens. Replace with your contract.
-RATES = {"in": 1.00, "cached": 0.10, "out": 8.00}
+#  REAL Azure list prices, fetched from Microsoft's public Retail Prices API.
+#  See _pricing.py for what this is (list price) and is not (your contract).
+from _pricing import rates as _rates                      # noqa: E402
+
+RATES, RATES_SOURCE = _rates(MODEL)                       # USD per MILLION tokens
 
 
 def usage(spans) -> dict[str, float]:
