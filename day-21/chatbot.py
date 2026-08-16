@@ -83,7 +83,7 @@ agent = Agent(
     "You will not provide any other information, and you will not make up any information." \
     "Be brief and concise in your responses.",
     name="Meridian Bank Assistant",
-    tools={"check_balance": check_balance}
+    tools=[check_balance]
 )
 
 # turns whatever gradio hands us as a message into a plain string
@@ -100,7 +100,7 @@ def plain_text(content: object) -> str:
 def new_session() -> dict:
     """Fresh, empty running totals for one conversation"""
     return {"id": f"chat-{uuid.uuid4().hex[:12]}", "turns": 0,
-            "token_in": 0, "tokens_out": 0, "seconds":0.0}
+            "tokens_in": 0, "tokens_out": 0, "seconds":0.0}
 
 def session_url(trace_id: str, session_id: str) -> str:
     """Link to the session view in langfuse."""
