@@ -110,7 +110,7 @@ def session_url(trace_id: str, session_id: str) -> str:
 
 def ask(message: str, history: list, session: dict | None = None) -> tuple[str, str]:
     session = new_session() if session is None else session
-    past = [Message(m["role", [plain_text(m["content"])]]) for m in history]
+    past = [Message(m["role"], [plain_text(m["content"])]) for m in history]
     started = time.perf_counter()
 
     with propagate_attributes(session_id=session["id"]), \
