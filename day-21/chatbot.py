@@ -137,13 +137,13 @@ def ask(message: str, history: list, session: dict | None = None) -> tuple[str, 
     session["tokens_out"] += tokens_out
     session["seconds"] += elapsed
 
-    report = (f"**This turn** - **{token_in}** tokens in - **{tokens_out:,}** out"
+    report = (f"**This turn** | **{token_in}** tokens in | **{tokens_out:,}** out | "
               f"**{elapsed:.2f}s**\n\n"
               f"**All {session['turns']} turn(s)** - **{session['tokens_in']:,}** in"
               f"**{session['tokens_out']:,}** out"
               f"**{session['tokens_in'] + session['tokens_out']:,}** total"
               f"**{session['seconds']:.2f}s**\n\n"
-              f"[This turn's trace]({langfuse.get_trace_url(trace_id=trace_id)})"
+              f"[This turn's trace]({langfuse.get_trace_url(trace_id=trace_id)}) | "
               f"[The whole conversation]({session_url(trace_id, session['id'])})")
     return result.text, report
 
