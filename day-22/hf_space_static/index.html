@@ -1,0 +1,470 @@
+<!doctype html>
+<!--
+  The cost of an answer - static build.
+
+  One file, no server. It calls Google AI Studio's OpenAI-compatible endpoint straight
+  from the browser, runs the tool-calling loop in JavaScript, and reports what the turn
+  cost. Read it top to bottom: settings, the tool, the model call, the token maths,
+  then the rendering.
+
+  There is no key in this file and there must never be one. A static Space has no
+  server, so it has no secrets - anything written here is downloaded by every visitor.
+  The key is asked for at runtime and kept in the visitor's own browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The cost of an answer - Meridian Bank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root{
+    --ink:#0B1620; --slab:#12212D; --rule:#243A48; --paper:#E8E2D4; --muted:#8AA0AE;
+    --cool:#6FA8C7; --violet:#9B8BC4; --patina:#4FB39A; --brass:#D69B45; --bad:#E4785F;
+    --display:"Fraunces",Georgia,serif;
+    --sans:"IBM Plex Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--ink); color:var(--paper); font-family:var(--sans);
+        font-size:16px; line-height:1.5; }
+  .wrap{ max-width:1180px; margin:0 auto; padding:0 20px 56px; }
+
+  /* masthead */
+  header{ padding:38px 0 22px; border-bottom:1px solid var(--rule); margin-bottom:26px; }
+  .top{ display:flex; align-items:baseline; justify-content:space-between;
+        gap:16px; flex-wrap:wrap; }
+  .mark{ font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+         text-transform:uppercase; color:var(--muted); }
+  .model{ font-family:var(--mono); font-size:11.5px; color:var(--brass);
+          border:1px solid var(--rule); border-radius:2px; padding:4px 10px; }
+  h1{ font-family:var(--display); font-weight:300; font-size:clamp(2.1rem,5.2vw,3.4rem);
+      line-height:1.02; letter-spacing:-.015em; margin:.34em 0 .18em; }
+  h1 em{ font-style:italic; color:var(--brass); }
+  .sub{ color:var(--muted); font-size:.92rem; max-width:62ch; margin:0; }
+
+  /* two columns, split by the meridian hairline */
+  .cols{ display:grid; grid-template-columns:7fr 5fr; gap:0 26px; align-items:start; }
+  .panel-col{ border-left:1px solid var(--rule); padding-left:26px; }
+  @media (max-width:820px){
+    .cols{ grid-template-columns:1fr; gap:24px; }
+    .panel-col{ border-left:0; padding-left:0; border-top:1px solid var(--rule);
+                padding-top:24px; }
+  }
+
+  /* key gate */
+  .gate{ border:1px solid var(--rule); border-radius:3px; background:var(--slab);
+         padding:20px; margin-bottom:18px; }
+  .gate h2{ font-family:var(--display); font-weight:300; font-size:1.3rem; margin:0 0 8px; }
+  .gate p{ color:var(--muted); font-size:.85rem; margin:0 0 14px; }
+  .gate-row{ display:flex; gap:10px; flex-wrap:wrap; }
+  input[type=password], input[type=text]{
+    flex:1 1 220px; min-width:0; background:var(--ink); color:var(--paper);
+    border:1px solid var(--rule); border-radius:2px; padding:11px 13px;
+    font-family:var(--mono); font-size:.85rem; }
+  input:focus{ outline:none; border-color:var(--brass); box-shadow:0 0 0 1px var(--brass); }
+
+  button{ font-family:var(--sans); font-size:.85rem; cursor:pointer;
+          background:transparent; color:var(--paper); border:1px solid var(--rule);
+          border-radius:2px; padding:11px 16px; transition:border-color .18s,color .18s; }
+  button:hover:not(:disabled){ border-color:var(--brass); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  button:focus-visible, a:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
+  .primary{ border-color:var(--brass); color:var(--brass); }
+
+  /* transcript */
+  .chat{ border:1px solid var(--rule); border-radius:3px; background:var(--slab);
+         height:392px; overflow-y:auto; padding:18px; display:flex; flex-direction:column;
+         gap:14px; }
+  .chat-empty{ margin:auto; text-align:center; font-family:var(--display);
+               font-weight:300; font-size:1.15rem; color:#42606F; }
+  .msg{ max-width:82%; padding:10px 14px; border-radius:3px; font-size:.94rem;
+        white-space:pre-wrap; word-wrap:break-word; }
+  .msg.user{ align-self:flex-end; background:#1B2E3C; }
+  .msg.bot{ align-self:flex-start; background:transparent; border:1px solid var(--rule); }
+  .msg.err{ align-self:flex-start; border:1px solid var(--bad); color:var(--bad); }
+
+  .composer{ display:flex; gap:10px; margin-top:14px; }
+  .composer input{ flex:1; }
+
+  .chips{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .chip{ flex:1 1 150px; text-align:left; padding:10px 12px; font-size:.83rem;
+         color:var(--muted); min-height:58px; }
+  .chip:hover{ color:var(--paper); }
+  .chip .tag{ display:block; font-family:var(--mono); font-size:9px; letter-spacing:.15em;
+              text-transform:uppercase; color:var(--brass); margin-top:6px; }
+
+  /* instrument panel */
+  .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+            text-transform:uppercase; color:var(--muted); padding-bottom:10px;
+            border-bottom:1px solid var(--rule); margin-bottom:16px; }
+  .headline{ font-family:var(--display); font-weight:300; font-size:1.42rem;
+             line-height:1.2; margin-bottom:16px; }
+  .empty{ color:var(--muted); font-size:.9rem; margin:0; }
+
+  .bar{ display:flex; height:12px; border-radius:2px; overflow:hidden;
+        background:var(--rule); margin-bottom:10px; }
+  .bar span{ height:100%; transition:width .55s cubic-bezier(.22,.8,.28,1); }
+  .s-in{ background:var(--cool); } .s-tool{ background:var(--violet); }
+  .s-ans{ background:var(--patina); } .s-think{ background:var(--brass); }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:8px 18px; margin-bottom:20px; }
+  .legend span{ font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+                text-transform:uppercase; }
+  .legend span::before{ content:""; display:inline-block; width:7px; height:7px;
+                        border-radius:1px; margin-right:6px; vertical-align:middle; }
+  .l-in{ color:var(--cool); } .l-in::before{ background:var(--cool); }
+  .l-tool{ color:var(--violet); } .l-tool::before{ background:var(--violet); }
+  .l-ans{ color:var(--patina); } .l-ans::before{ background:var(--patina); }
+  .l-think{ color:var(--brass); } .l-think::before{ background:var(--brass); }
+
+  .stats{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px 18px; }
+  .stat span{ display:block; }
+  .k{ font-family:var(--mono); font-size:9.5px; letter-spacing:.16em;
+      text-transform:uppercase; color:var(--muted); }
+  .v{ font-family:var(--mono); font-size:1.12rem; }
+  .v-in{ color:var(--cool); } .v-tool{ color:var(--violet); }
+  .v-think{ color:var(--brass); } .v-total{ color:var(--paper); }
+
+  .meridian{ height:1px; background:var(--rule); margin:24px 0 18px; }
+  .caveat{ margin-top:18px; font-size:.76rem; line-height:1.6; color:var(--muted); }
+  .caveat em{ color:var(--patina); font-style:normal; }
+
+  /* call inspector - what a trace would have shown */
+  details{ border-top:1px solid var(--rule); margin-top:20px; padding-top:14px; }
+  summary{ font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+           text-transform:uppercase; color:var(--muted); cursor:pointer; }
+  summary:hover{ color:var(--brass); }
+  .call{ border-left:2px solid var(--rule); padding:10px 0 10px 12px; margin-top:12px; }
+  .call-h{ font-family:var(--mono); font-size:10.5px; color:var(--paper); }
+  .call-h b{ color:var(--brass); font-weight:500; }
+  .call-n{ font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:4px; }
+
+  .note{ margin-top:26px; padding-top:18px; border-top:1px solid var(--rule);
+         color:var(--muted); font-size:.83rem; line-height:1.65; }
+  .note strong{ color:var(--paper); font-weight:500; }
+  .sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  @media (prefers-reduced-motion:reduce){ .bar span{ transition:none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="top">
+      <span class="mark">Meridian Bank &middot; assistant</span>
+      <span class="model" id="model-badge">gemma-4-31b-it &middot; Google AI Studio</span>
+    </div>
+    <h1>The cost of <em>an answer</em></h1>
+    <p class="sub">A static page with no server behind it. It calls the model from your
+      browser and reports what each turn cost - including the thinking Google bills for
+      and never shows you.</p>
+  </header>
+
+  <!-- The key gate. A static Space has no secrets, so the key comes from the visitor. -->
+  <section class="gate" id="gate">
+    <h2>Your Google AI Studio key</h2>
+    <p>Stored only in this browser, sent only to Google. This page has no server and
+      never ships a key of its own. Get one at
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
+         style="color:var(--brass)">aistudio.google.com/apikey</a>.</p>
+    <div class="gate-row">
+      <label class="sr" for="key">API key</label>
+      <input type="password" id="key" placeholder="AIza..." autocomplete="off" spellcheck="false">
+      <button class="primary" id="save-key">Use this key</button>
+      <button id="forget-key" hidden>Forget it</button>
+    </div>
+  </section>
+
+  <div class="cols">
+    <div>
+      <div class="chat" id="chat" aria-live="polite">
+        <div class="chat-empty" id="chat-empty">Ask something.<br>Each turn is measured on the right.</div>
+      </div>
+      <div class="composer">
+        <label class="sr" for="box">Your message</label>
+        <input type="text" id="box" placeholder="Ask about an account, or the branch hours" disabled>
+        <button id="send" class="primary" disabled>Send</button>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="panel-col">
+      <div id="panel"></div>
+      <div class="note">
+        <strong>Why three numbers, not two.</strong> A balance question makes two model
+        calls - one to choose the tool, one to answer from its result - and the panel
+        adds both. Gemma reasons before it answers, and Google bills those tokens but
+        reports them as neither input nor output, so the parts never add up on their own.
+        The leftover is the thinking, and it is often larger than the answer.
+      </div>
+      <p style="margin-top:18px"><button id="reset">Start a new conversation</button></p>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- settings ----
+const MODEL = "gemma-4-31b-it";
+const BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+const STORE = "meridian.key";          // where the visitor's key lives in this browser
+
+const SYSTEM = "You are Meridian Bank's assistant. Branches open Mon-Fri 9:30-16:30, " +
+  "Sat 9:30-13:30. Savings pays 2.75%, fixed deposits 7.25%. Use the tool for any " +
+  "balance - never guess one. Be brief.";
+
+// A pretend bank. The model may not invent a balance; it has to call for one.
+const ACCOUNTS = { "SB-9001": 84215.50, "SB-9002": 12430.00, "SB-9003": 346890.25 };
+
+const TOOLS = [{
+  type: "function",
+  function: {
+    name: "check_balance",
+    description: "Look up the balance of a Meridian Bank account.",
+    parameters: {
+      type: "object",
+      properties: { account_id: { type: "string", description: "Account id, e.g. SB-9001" } },
+      required: ["account_id"]
+    }
+  }
+}];
+
+// The tool itself. In the Gradio build this is Python; here it is four lines of JS.
+function checkBalance(accountId) {
+  const balance = ACCOUNTS[String(accountId || "").toUpperCase()];
+  return balance === undefined
+    ? `No account ${accountId}.`
+    : `${accountId}: Rs ${balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+}
+
+const EXAMPLES = [
+  ["What's the balance on SB-9001?", "two model calls"],
+  ["What are your Saturday timings?", "one model call"],
+  ["And SB-9003?", "follow-up, same conversation"],
+];
+
+// Gemma thinks out loud in <thought> tags and Google will not let us switch that off,
+// so cut them out. The tags are not always balanced, hence the second pattern.
+const THOUGHTS = /<thought>[\s\S]*?<\/thought>|<thought>[\s\S]*/g;
+const stripThoughts = (t) => (t || "").replace(THOUGHTS, "").split("</thought>").join("").trim();
+
+// ---------------------------------------------------------------- key store ----
+// localStorage throws in some privacy modes, so every access is guarded.
+function readKey() { try { return localStorage.getItem(STORE) || ""; } catch { return ""; } }
+function writeKey(k) { try { k ? localStorage.setItem(STORE, k) : localStorage.removeItem(STORE); } catch {} }
+
+// ---------------------------------------------------------------- the model ----
+// One HTTP call to the model. Returns the parsed body, or throws with Google's own words.
+async function callModel(messages, key) {
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, messages, tools: TOOLS })
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = Array.isArray(body) ? body[0]?.error : body?.error;
+    throw new Error(err?.message || `HTTP ${res.status}`);
+  }
+  return body;
+}
+
+// One whole turn: call the model, run any tool it asks for, call it again, and keep
+// the usage from every call so the panel can show where the tokens went.
+async function runTurn(userText, history, key) {
+  const messages = [{ role: "system", content: SYSTEM }, ...history,
+                    { role: "user", content: userText }];
+  const calls = [];
+  let reply = "";
+
+  for (let step = 0; step < 4; step++) {          // a bounded loop; 2 is the normal case
+    const body = await callModel(messages, key);
+    const choice = body.choices?.[0] || {};
+    const message = choice.message || {};
+    const toolCalls = message.tool_calls || [];
+    const usage = body.usage || {};
+
+    calls.push({
+      prompt: usage.prompt_tokens || 0,
+      completion: usage.completion_tokens || 0,
+      total: usage.total_tokens || 0,
+      toolCall: toolCalls.length > 0,
+      names: toolCalls.map((t) => t.function?.name).join(", ")
+    });
+
+    if (!toolCalls.length) { reply = stripThoughts(message.content); break; }
+
+    // The model asked for the tool. Run it, hand back the result, and go round again.
+    messages.push({ role: "assistant", tool_calls: toolCalls });
+    for (const call of toolCalls) {
+      let args = {};
+      try { args = JSON.parse(call.function?.arguments || "{}"); } catch {}
+      messages.push({ role: "tool", tool_call_id: call.id,
+                      content: checkBalance(args.account_id) });
+    }
+  }
+  return { reply: reply || "(the model returned nothing)", calls };
+}
+
+// ------------------------------------------------------------- token maths ----
+// Exactly the arithmetic the Python build uses. The four parts sum to the total.
+function measure(calls) {
+  const m = { calls: calls.length, input: 0, tool: 0, answer: 0, thinking: 0, total: 0 };
+  for (const c of calls) {
+    m.input += c.prompt;
+    m.total += c.total;
+    m.thinking += Math.max(c.total - c.prompt - c.completion, 0);
+    if (c.toolCall) m.tool += c.completion;   // the model wrote a function call
+    else m.answer += c.completion;            // the model wrote prose
+  }
+  return m;
+}
+
+// ---------------------------------------------------------------- rendering ----
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (n) => n.toLocaleString("en-US");
+
+function segment(cls, n, total) {
+  return n > 0 ? `<span class="${cls}" style="width:${(100 * n / total).toFixed(2)}%"></span>` : "";
+}
+
+function renderPanel(m, session, seconds) {
+  const parts = [["in", m.input, "prompt"], ["tool", m.tool, "tool call"],
+                 ["ans", m.answer, "answer"], ["think", m.thinking, "thinking"]];
+  const bar = m.total > 0
+    ? `<div class="bar" role="img" aria-label="token breakdown of ${m.total} total">` +
+      parts.map(([k, n]) => segment("s-" + k, n, m.total)).join("") + `</div>` +
+      `<div class="legend">` + parts.filter(([, n]) => n > 0)
+        .map(([k, n, label]) => `<span class="l-${k}">${label} ${num(n)}</span>`).join("") +
+      `</div>`
+    : "";
+
+  const cells = (a) => a.map(([k, v, cls]) =>
+    `<div class="stat"><span class="k">${k}</span><span class="v ${cls}">${num(v)}</span></div>`).join("");
+
+  const inspector = m.perCall.map((c, i) => {
+    const think = Math.max(c.total - c.prompt - c.completion, 0);
+    return `<div class="call">
+      <div class="call-h">Call ${i + 1} &middot; <b>${c.toolCall ? "wrote a function call" : "wrote the answer"}</b></div>
+      <div class="call-n">prompt ${num(c.prompt)} &middot; output ${num(c.completion)} &middot; thinking ${num(think)} &middot; total ${num(c.total)}${c.names ? " &middot; " + esc(c.names) : ""}</div>
+    </div>`;
+  }).join("");
+
+  $("panel").innerHTML = `
+    <div class="eyebrow">This turn &middot; ${m.calls} model call${m.calls === 1 ? "" : "s"} &middot; ${seconds.toFixed(2)}s</div>
+    <div class="headline">${m.thinking ? `${num(m.thinking)} of ${num(m.total)} tokens went on thinking you never saw` : "Nothing hidden this turn."}</div>
+    ${bar}
+    <div class="stats">${cells([
+      ["input tokens", m.input, "v-in"], ["thinking tokens", m.thinking, "v-think"],
+      ["tool calling tokens", m.tool, "v-tool"], ["total tokens", m.total, "v-total"]])}</div>
+    <div class="meridian"></div>
+    <div class="eyebrow">Session &middot; ${session.turns} turn${session.turns === 1 ? "" : "s"} &middot; ${session.calls} model calls</div>
+    <div class="stats">${cells([
+      ["input tokens", session.input, "v-in"], ["thinking tokens", session.thinking, "v-think"],
+      ["tool calling tokens", session.tool, "v-tool"], ["total tokens", session.total, "v-total"]])}</div>
+    <div class="caveat">Thinking is not reported directly - it is the total minus
+      everything else. On some turns Gemma folds its answer into the same bucket, which
+      is why <em>answer</em> can read low or vanish.</div>
+    <details open><summary>Every call this turn made</summary>${inspector}</details>`;
+}
+
+function emptyPanel() {
+  $("panel").innerHTML = `<div class="eyebrow">This turn</div>
+    <p class="empty">Nothing measured yet. Ask something on the left and the tokens land
+    here - including the ones Google bills for but never shows you.</p>`;
+}
+
+function addMessage(text, cls) {
+  $("chat-empty")?.remove();
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  $("chat").append(el);
+  $("chat").scrollTop = $("chat").scrollHeight;
+  return el;
+}
+
+// ---------------------------------------------------------------- the app ----
+let history = [];
+let session = { turns: 0, calls: 0, input: 0, tool: 0, answer: 0, thinking: 0, total: 0 };
+
+function setReady(ready) {
+  $("box").disabled = !ready;
+  $("send").disabled = !ready;
+  $("forget-key").hidden = !ready;
+  $("gate").style.display = ready ? "none" : "";
+}
+
+async function send() {
+  const text = $("box").value.trim();
+  const key = readKey();
+  if (!text || !key) return;
+
+  $("box").value = "";
+  $("box").disabled = $("send").disabled = true;
+  addMessage(text, "user");
+  const pending = addMessage("thinking...", "bot");
+  const started = performance.now();
+
+  try {
+    const { reply, calls } = await runTurn(text, history, key);
+    const seconds = (performance.now() - started) / 1000;
+    pending.textContent = reply;
+    history.push({ role: "user", content: text }, { role: "assistant", content: reply });
+
+    const m = measure(calls);
+    m.perCall = calls;
+    session.turns += 1;
+    for (const k of ["calls", "input", "tool", "answer", "thinking", "total"]) session[k] += m[k];
+    renderPanel(m, session, seconds);
+  } catch (err) {
+    pending.remove();
+    addMessage(`That turn failed: ${err.message}`, "err");
+    $("panel").innerHTML = `<div class="eyebrow" style="color:var(--bad)">Turn failed</div>
+      <p class="empty">${esc(err.message)}</p>
+      <p class="empty" style="margin-top:10px">If this says the key is not valid, use
+      <b>Forget it</b> and enter another one.</p>`;
+  } finally {
+    $("box").disabled = $("send").disabled = false;
+    $("box").focus();
+  }
+}
+
+// wiring
+$("model-badge").textContent = `${MODEL} · Google AI Studio`;
+$("chips").innerHTML = EXAMPLES.map(([p, tag], i) =>
+  `<button class="chip" data-i="${i}">${esc(p)}<span class="tag">${esc(tag)}</span></button>`).join("");
+$("chips").addEventListener("click", (e) => {
+  const btn = e.target.closest(".chip");
+  if (btn) { $("box").value = EXAMPLES[btn.dataset.i][0]; $("box").focus(); }
+});
+$("save-key").addEventListener("click", () => {
+  const k = $("key").value.trim();
+  if (!k) return;
+  writeKey(k); $("key").value = ""; setReady(true); $("box").focus();
+});
+$("key").addEventListener("keydown", (e) => { if (e.key === "Enter") $("save-key").click(); });
+$("forget-key").addEventListener("click", () => { writeKey(""); setReady(false); });
+$("send").addEventListener("click", send);
+$("box").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+$("reset").addEventListener("click", () => {
+  history = [];
+  session = { turns: 0, calls: 0, input: 0, tool: 0, answer: 0, thinking: 0, total: 0 };
+  $("chat").innerHTML = `<div class="chat-empty" id="chat-empty">Ask something.<br>Each turn is measured on the right.</div>`;
+  emptyPanel();
+});
+
+emptyPanel();
+setReady(Boolean(readKey()));
+
+// Exposed so the page can be exercised without typing. Used by the test harness only.
+window.__meridian = { runTurn, measure, stripThoughts, checkBalance };
+</script>
+</body>
+</html>
