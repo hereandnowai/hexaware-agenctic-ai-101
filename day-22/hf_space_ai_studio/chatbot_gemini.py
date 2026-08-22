@@ -60,7 +60,7 @@ def plain_text(content: object) -> str:
 def new_session() -> dict:
     """Fresh, empty running totals for one conversation"""
     return {"id": f"chat-{uuid.uuid4().hex[:12]}", "turns": 0,
-            "tokens_in": 0, "tokens_out": 0, "seconds":0.0}
+            "tokens_in": 0, "tokens_out": 0, "tokens_think": 0, "seconds":0.0}
 
 def trace_links(trace_id: str, session_id: str) -> str:
     """Two markdown links: this one turn, and the whole conversation it belongs to."""
