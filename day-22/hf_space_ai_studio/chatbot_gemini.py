@@ -15,3 +15,5 @@ from pydantic import Field
 
 load_dotenv(Path(__file__).parent / ".env")
 MODEL = os.environ["GOOGLE_MODEL"]
+API_KEY = os.environ["GOOGLE_API_KEY"]
+BASE_URL = os.environ["GOOGLE_BASE_URL"]
