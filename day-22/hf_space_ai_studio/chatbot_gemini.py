@@ -99,7 +99,15 @@ def ask(message: str, history: list, session: dict | None = None) -> tuple[str, 
     session["tokens_think"] += tokens_think
     session["seconds"] += elapsed
 
-    report = (f"**This turn** | **{token_in}** in | **{tokens_out:,}** out |
-              f" **{tokens_think:,}** thinking | **{elapsed:.2f}s**\n\n"
+    report = (f"**This turn** | **{token_in}** in | **{tokens_out:,}** out | "
+              f"**{tokens_think:,}** thinking | **{elapsed:.2f}s**\n\n"
               f"{trace_links(trace_id, session['id'])}")
     return strip_thoughts(result.text), report
+
+if __name__ == "__main__":
+    session, history = new_session(), []
+    for question in ["What's the balance on SB-9001?", "And SB-9003"]:
+        answer, summary = ask(question, history, session)
+        history += [{"role": "user", "content": question,
+                    "role": "assistant", "content": answer}]
+        print(f"\n {question}\n{answer}\n\n{summary}")
